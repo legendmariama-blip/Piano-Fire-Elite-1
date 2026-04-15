@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#050505">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Piano Fire - Elite Edition</title>
+    <link rel="manifest" href="manifest.json">
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+      }
+    </script>
+    <style>
+        :root { --neon-blue: #00f2fe; --piano-purple: #7000ff; --bg-dark: #050505; --neon-red: #ff0055; --gold: #ffd700; }
+        body { margin: 0; background: var(--bg-dark); color: #fff; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        .loader { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.1); border-top: 5px solid var(--neon-blue); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #import-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 300; }
+        .import-box { background: #111; padding: 30px; border-radius: 20px; border: 2px solid var(--neon-blue); text-align: center; width: 80%; max-width: 400px; }
+
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.85); z-index: 100; text-align: center; padding: 20px; box-sizing: border-box; }
+        .hidden { display: none !important; }
+        
+        .btn { padding: 18px 45px; background: var(--piano-purple); border: none; border-radius: 40px; color: #fff; font-size: 1.2rem; font-weight: bold; margin: 10px; box-shadow: 0 0 20px var(--piano-purple); cursor: pointer; text-transform: uppercase; }
+        .btn-add { background: #1a1a1a; border: 1px solid #444; padding: 10px 20px; font-size: 0.9rem; margin-top: 10px; color: #fff; border-radius: 10px; cursor: pointer; display: inline-block; }
+
+        #song-list { width: 95%; max-height: 400px; overflow-y: auto; margin: 20px 0; padding: 10px; border-radius: 15px; background: rgba(255,255,255,0.05); -webkit-overflow-scrolling: touch; }
+        .song-card { background: #111; padding: 12px; margin: 8px 0; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--neon-blue); }
+        .song-info { flex-grow: 1; text-align: left; margin-left: 10px; font-weight: bold; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .best-score-label { display: block; font-size: 0.65rem; color: var(--gold); font-weight: bold; margin-top: 2px; }
+        
+        .controls-wrapper { display: flex; align-items: center; gap: 8px; }
+        .play-song-btn { background: var(--piano-purple); border: none; color: white; border-radius: 5px; padding: 6px 12px; font-weight: bold; font-size: 0.7rem; cursor: pointer; }
+
+        #hud { position: absolute; top: 0; width: 100%; z-index: 10; pointer-events: none; }
+        #progress-bar-container { width: 100%; height: 6px; background: rgba(255,255,255,0.1); position: absolute; top: 0; }
+        #progress-fill { width: 0%; height: 100%; background: var(--neon-blue); box-shadow: 0 0 10px var(--neon-blue); }
+        #score { font-size: 3.5rem; font-weight: 900; text-shadow: 0 0 15px var(--neon-blue); margin-top: 40px; text-align: center; }
+        
+        #lives-display { position: absolute; top: 20px; left: 20px; font-size: 1.5rem; color: var(--neon-red); text-shadow: 0 0 10px var(--neon-red); font-weight: bold; pointer-events: none; }
+        #heart-break-fx { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 5rem; pointer-events: none; z-index: 50; opacity: 0; }
+        
+        #pause-btn { position: absolute; top: 20px; right: 20px; width: 50px; height: 50px; background: rgba(255,255,255,0.1); border: 2px solid var(--neon-blue); border-radius: 50%; color: white; font-size: 1.5rem; z-index: 15; cursor: pointer; pointer-events: auto; display: flex; align-items: center; justify-content: center; }
+        
+        #hit-line { position: absolute; bottom: 120px; width: 100%; height: 3px; background: linear-gradient(90deg, transparent, var(--neon-blue), transparent); box-shadow: 0 0 15px var(--neon-blue); z-index: 5; }
+        .branding { position: absolute; bottom: 20px; font-size: 0.8rem; letter-spacing: 3px; color: rgba(255,255,255,0.5); text-transform: uppercase; font-weight: bold; }
+
+        .tap-text { position: absolute; color: var(--gold); font-weight: 900; font-size: 1.5rem; text-shadow: 0 0 10px #000; pointer-events: none; z-index: 60; animation: floatUp 0.8s ease-out forwards; }
+        @keyframes floatUp { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-100px); } }
+
+        @keyframes break { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(3); } }
+        .animate-break { animation: break 0.6s ease-out forwards; }
+    </style>
+</head>
+<body>
+
+    <div id="import-overlay" class="hidden">
+        <div class="import-box">
+            <h2 style="color: var(--neon-blue); margin-top: 0;">IMPORTING...</h2>
+            <div class="loader" style="margin: 20px auto;"></div>
+            <p id="import-status" style="font-weight: bold; margin-bottom: 5px;">0/0</p>
+            <p id="import-filename" style="font-size: 0.8rem; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></p>
+        </div>
+    </div>
+
+    <div id="menu-screen" class="overlay">
+        <h1 style="font-size: 2.5rem; color: var(--neon-blue); margin-bottom: 0;">PIANO FIRE</h1>
+        <p style="font-size: 0.7rem; color: #444; margin-bottom: 20px;">ELITE APP ENGINE</p>
+        
+        <div id="song-list">
+             <p style="color:#555; margin-top: 20px;">Waking up storage...</p>
+        </div>
+
+        <label for="music-upload" class="btn-add">➕ IMPORT UNLIMITED SONGS</label>
+        <input type="file" id="music-upload" accept="audio/*" multiple class="hidden">
+        
+        <div class="branding">MADE BY CHILLFORGE</div>
+    </div>
+
+    <div id="hud" class="hidden">
+        <div id="progress-bar-container"><div id="progress-fill"></div></div>
+        <div id="score">0</div>
+        <div id="lives-display">5❤️</div>
+        <button id="pause-btn">||</button>
+        <div id="hit-line"></div>
+        <div id="heart-break-fx">💔</div>
+    </div>
+
+    <div id="pause-screen" class="overlay hidden">
+        <h2 style="color: var(--neon-blue); margin-bottom: 30px;">PAUSED</h2>
+        <button class="btn" onclick="resumeGame()">1 RESUME</button>
+        <button class="btn" onclick="startGame()">2 RESTART</button>
+        <button class="btn-add" onclick="location.reload()">3 MENU</button>
+    </div>
+
+    <div id="retry-screen" class="overlay hidden">
+        <div id="fail-msg" style="font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; max-width: 80%;"></div>
+        <div id="score-label" style="font-size: 1rem; color: #888;">CURRENT SCORE</div>
+        <div id="final-score" style="font-size: 3.5rem; font-weight: 900; margin-bottom: 5px;">0</div>
+        <div id="global-best-display" style="color: var(--gold); margin-bottom: 25px; font-size: 1.2rem; font-weight: bold;"></div>
+        <button class="btn" onclick="startGame()">PLAY AGAIN</button>
+        <button class="btn-add" onclick="location.reload()">MENU</button>
+        <div class="branding">MADE BY CHILLFORGE</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const fileInput = document.getElementById('music-upload');
+        let audioCtx, analyser, dataArray, source, audioBuffer, songDuration;
+        let score = 0, gameActive = false, isPaused = false, tiles = [], particles = [], lastSpawn = 0;
+        let lives = 5, startTime = 0, pausedAt = 0, currentSongName = "";
+
+        const feedbackWords = ["AWESOME", "PERFECT", "GREAT", "COOL"];
+
+        let db = null;
+
+        // Initialize Database
+        const dbRequest = indexedDB.open("PianoFireDB", 1);
+        dbRequest.onupgradeneeded = (e) => {
+            e.target.result.createObjectStore("songs", { keyPath: "name" });
+        };
+        dbRequest.onsuccess = (e) => {
+            db = e.target.result;
+            loadLibrary();
+        };
+
+        function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resize); resize();
+
+        function loadLibrary() {
+            if(!db) return;
+            const list = document.getElementById('song-list');
+            const transaction = db.transaction(["songs"], "readonly");
+            const store = transaction.objectStore("songs");
+            const getAll = store.getAll();
+            
+            getAll.onsuccess = () => {
+                let saved = getAll.result;
+                list.innerHTML = "";
+                if(saved.length > 0) {
+                    saved.sort((a, b) => a.name.localeCompare(b.name));
+                    saved.forEach(song => renderSongItem(song.name));
+                } else {
+                    list.innerHTML = '<p style="color:#555; margin-top: 20px;">Library empty.<br>Add songs to begin!</p>';
+                }
+            };
+        }
+
+        function renderSongItem(name) {
+            const list = document.getElementById('song-list');
+            // Check global best for the label
+            const globalBest = localStorage.getItem('piano_fire_global_best') || 0;
+            const div = document.createElement('div');
+            div.className = 'song-card';
+            div.innerHTML = `
+                <div class="song-info">
+                    <span>${name}</span>
+                    <span class="best-score-label">GLOBAL BEST: ${globalBest}</span>
+                </div>
+                <div class="controls-wrapper">
+                    <button class="play-song-btn" onclick="playSelected('${name}')">PLAY</button>
+                </div>`;
+            list.appendChild(div);
+        }
+
+        window.playSelected = (name) => {
+            if(!db) return;
+            const transaction = db.transaction(["songs"], "readonly");
+            const store = transaction.objectStore("songs");
+            const getReq = store.get(name);
+            getReq.onsuccess = () => {
+                currentSongName = name;
+                prepareAudioFromBase64(getReq.result.data);
+            };
+        };
+
+        fileInput.onchange = (e) => {
+            const files = Array.from(e.target.files);
+            if(files.length === 0) return;
+            const overlay = document.getElementById('import-overlay');
+            overlay.classList.remove('hidden');
+            const processFile = (index) => {
+                if(index >= files.length) {
+                    setTimeout(() => { overlay.classList.add('hidden'); loadLibrary(); }, 500);
+                    return;
+                }
+                const file = files[index];
+                document.getElementById('import-status').innerText = `${index + 1} / ${files.length}`;
+                document.getElementById('import-filename').innerText = file.name;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const trans = db.transaction(["songs"], "readwrite");
+                    trans.objectStore("songs").put({ name: file.name, data: ev.target.result });
+                    trans.oncomplete = () => processFile(index + 1);
+                };
+                reader.readAsDataURL(file);
+            };
+            processFile(0);
+        };
+
+        async function prepareAudioFromBase64(base64) {
+            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const response = await fetch(base64);
+            const arrayBuffer = await response.arrayBuffer();
+            audioCtx.decodeAudioData(arrayBuffer, (buffer) => { 
+                audioBuffer = buffer; 
+                songDuration = buffer.duration; 
+                startGame(); 
+            });
+        }
+
+        function startGame() {
+            document.querySelectorAll('.overlay').forEach(o => o.classList.add('hidden'));
+            document.getElementById('hud').classList.remove('hidden');
+            score = 0; lives = 5;
+            document.getElementById('score').innerText = "0";
+            updateLivesDisplay();
+            tiles = []; particles = []; gameActive = true; isPaused = false;
+            if(source) try { source.stop(); } catch(e) {}
+            analyser = audioCtx.createAnalyser();
+            source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(analyser); analyser.connect(audioCtx.destination);
+            startTime = audioCtx.currentTime;
+            source.start(0);
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            animate();
+        }
+
+        function updateLivesDisplay() { document.getElementById('lives-display').innerText = lives + "❤️"; }
+        function loseLife() {
+            lives--; updateLivesDisplay();
+            const fx = document.getElementById('heart-break-fx');
+            fx.classList.remove('animate-break'); void fx.offsetWidth; fx.classList.add('animate-break');
+            if(lives <= 0) endGame(false);
+        }
+
+        document.getElementById('pause-btn').onclick = (e) => {
+            e.stopPropagation(); if(!gameActive) return;
+            isPaused = true; pausedAt = audioCtx.currentTime - startTime;
+            source.stop(); document.getElementById('pause-screen').classList.remove('hidden');
+        };
+
+        function resumeGame() {
+            document.getElementById('pause-screen').classList.add('hidden');
+            isPaused = false; source = audioCtx.createBufferSource(); source.buffer = audioBuffer;
+            source.connect(analyser); startTime = audioCtx.currentTime - pausedAt;
+            source.start(0, pausedAt); animate();
+        }
+
+        class Particle {
+            constructor(x, y) { this.x = x; this.y = y; this.size = Math.random() * 5 + 2; this.speedX = (Math.random() - 0.5) * 10; this.speedY = (Math.random() - 0.5) * 10; this.opacity = 1; this.color = Math.random() > 0.5 ? '#00f2fe' : '#fff'; }
+            update() { this.x += this.speedX; this.y += this.speedY; this.opacity -= 0.02; }
+            draw() {
+                ctx.save(); ctx.globalAlpha = this.opacity; ctx.fillStyle = this.color;
+                ctx.beginPath(); for(let i=0; i<4; i++) { ctx.lineTo(this.x + Math.cos(i*Math.PI/2)*this.size, this.y + Math.sin(i*Math.PI/2)*this.size); ctx.lineTo(this.x + Math.cos(i*Math.PI/2+Math.PI/4)*(this.size/2), this.y + Math.sin(i*Math.PI/2+Math.PI/4)*(this.size/2)); }
+                ctx.closePath(); ctx.fill(); ctx.restore();
+            }
+        }
+
+        class Tile {
+            constructor(lane, speed, isLong = false) { this.lane = lane; this.w = canvas.width/4; this.isLong = isLong; this.h = isLong ? canvas.height*0.5 : canvas.height*0.18; this.x = lane*this.w; this.y = -this.h; this.speed = speed; this.beingHeld = false; this.hasStartedHold = false; }
+            draw() { let grad = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.h); grad.addColorStop(0, this.beingHeld ? '#fff' : '#00f2fe'); grad.addColorStop(1, '#7000ff'); ctx.fillStyle = grad; ctx.beginPath(); ctx.roundRect(this.x+5, this.y, this.w-10, this.h-8, 15); ctx.fill(); }
+        }
+
+        function animate() {
+            if (!gameActive || isPaused) return;
+            const elapsed = audioCtx.currentTime - startTime;
+            document.getElementById('progress-fill').style.width = Math.min((elapsed/songDuration)*100, 100) + "%";
+            analyser.getByteFrequencyData(dataArray);
+            let bass = dataArray[2];
+            ctx.fillStyle = `rgb(${bass/12}, 0, ${bass/6})`; ctx.fillRect(0,0,canvas.width,canvas.height);
+            let speed = (canvas.height/95) + (elapsed*0.08); 
+            if (!tiles.some(t=>t.isLong) && bass > 225 && Date.now() - lastSpawn > 500) {
+                let lane = Math.floor(Math.random()*4);
+                tiles.push(new Tile(lane, speed, (lane===0||lane===3)&&Math.random()>0.7));
+                lastSpawn = Date.now();
+            }
+            for (let i = tiles.length-1; i >= 0; i--) {
+                tiles[i].y += tiles[i].speed; tiles[i].draw();
+                if(tiles[i].beingHeld) for(let j=0; j<3; j++) particles.push(new Particle(tiles[i].x+tiles[i].w/2, canvas.height-120));
+                if (tiles[i].y > canvas.height) { tiles.splice(i, 1); loseLife(); if(!gameActive) return; continue; }
+                if (tiles[i].isLong && tiles[i].y > canvas.height-120) {
+                    if(tiles[i].hasStartedHold) { tiles.splice(i,1); score+=5; document.getElementById('score').innerText = score; }
+                    else { tiles.splice(i,1); loseLife(); if(!gameActive) return; }
+                }
+            }
+            for (let i = particles.length-1; i >= 0; i--) { particles[i].update(); particles[i].draw(); if(particles[i].opacity <= 0) particles.splice(i,1); }
+            if (elapsed >= songDuration) endGame(true); else requestAnimationFrame(animate);
+        }
+
+        function endGame(comp = false) {
+            gameActive = false; if(source) source.stop();
+            document.getElementById('hud').classList.add('hidden');
+            const retryScreen = document.getElementById('retry-screen');
+            retryScreen.classList.remove('hidden');
+            document.getElementById('final-score').innerText = score;
+            
+            // GLOBAL BEST LOGIC
+            let globalBest = parseInt(localStorage.getItem('piano_fire_global_best') || '0');
+            if (score > globalBest) {
+                localStorage.setItem('piano_fire_global_best', score);
+                globalBest = score;
+            }
+            
+            const msg = document.getElementById('fail-msg');
+            if (comp) { msg.innerHTML = "congratulations you smashed it ❤️🥳 you're great 👏🎉"; msg.style.color = "var(--gold)"; }
+            else { msg.innerHTML = "Nice Try Keep It Up😁👏"; msg.style.color = "white"; }
+            
+            document.getElementById('global-best-display').innerText = "GLOBAL BEST: " + globalBest;
+        }
+
+        canvas.ontouchstart = (e) => {
+            if(isPaused || !gameActive) return;
+            const tx = e.touches[0].clientX, ty = e.touches[0].clientY;
+            for (let i=0; i<tiles.length; i++) {
+                if (tx > tiles[i].x && tx < tiles[i].x+tiles[i].w && ty > tiles[i].y && ty < tiles[i].y+tiles[i].h) {
+                    if(tiles[i].isLong) { tiles[i].beingHeld = true; tiles[i].hasStartedHold = true; }
+                    else { for(let j=0; j<15; j++) particles.push(new Particle(tiles[i].x+tiles[i].w/2, tiles[i].y+tiles[i].h/2)); tiles.splice(i,1); score++; document.getElementById('score').innerText = score; }
+                    break;
+                }
+            }
+        };
+        canvas.ontouchend = () => tiles.forEach(t => t.beingHeld = false);
+    </script>
+</body>
+</html>
